@@ -28,7 +28,7 @@ class SignalingService extends EventEmitter {
 
   connect(userId: string) {
     this.userId = userId;
-    this.socket = io('http://localhost:3000');
+    this.socket = io('https://remote-app-server.onrender.com');
 
     this.socket.on('connect', () => {
       this.sendMessage({

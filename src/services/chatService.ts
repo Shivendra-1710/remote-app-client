@@ -6,7 +6,7 @@ class ChatService {
   private userId: string | null = null;
 
   constructor() {
-    this.socket = io(import.meta.env.VITE_API_URL || 'http://localhost:3000', {
+    this.socket = io('https://remote-app-server.onrender.com', {
       autoConnect: false,
       withCredentials: true
     });
