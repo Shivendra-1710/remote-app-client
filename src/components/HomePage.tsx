@@ -155,10 +155,16 @@ const HomePage: React.FC = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        console.log('🔍 [HomePage] Fetching user data...');
         const [userData, allUsers] = await Promise.all([
           getUserProfile(),
           getAllUsers()
         ]);
+        
+        console.log('👤 [HomePage] Current user:', { id: userData.id, name: userData.name });
+        console.log('👥 [HomePage] All users loaded:', allUsers.map(u => ({ id: u.id, name: u.name, status: u.status })));
+        console.log('📊 [HomePage] Total users: ', allUsers.length);
+        
         setCurrentUser(userData);
         setUsers(allUsers);
 
@@ -167,7 +173,7 @@ const HomePage: React.FC = () => {
         socketManager.connect(userData.id);
       } catch (err) {
         setError('Failed to fetch user data');
-        console.error('Error fetching data:', err);
+        console.error('❌ [HomePage] Error fetching data:', err);
       } finally {
         setLoading(false);
       }

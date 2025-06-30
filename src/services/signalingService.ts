@@ -28,15 +28,48 @@ class SignalingService extends EventEmitter {
 
   connect(userId: string) {
     this.userId = userId;
-    this.socket = io('https://remote-app-server.onrender.com');
+    
+    console.log('Attempting to connect to signaling server at http://localhost:3001');
+    
+    this.socket = io('http://localhost:3001', {
+      transports: ['websocket', 'polling'],
+      timeout: 20000,
+      forceNew: true,
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5,
+      autoConnect: true
+    });
 
     this.socket.on('connect', () => {
+      console.log('Successfully connected to signaling server');
       this.sendMessage({
         type: SignalingMessageType.REGISTER,
         from: userId,
         to: '',
         data: null,
       });
+    });
+
+    this.socket.on('connect_error', (error) => {
+      console.error('Signaling server connection error:', error.message);
+      console.error('Make sure the signaling server is running on port 3001');
+    });
+
+    this.socket.on('disconnect', (reason) => {
+      console.log('Disconnected from signaling server:', reason);
+    });
+
+    this.socket.on('reconnect', (attemptNumber) => {
+      console.log('Reconnected to signaling server after', attemptNumber, 'attempts');
+    });
+
+    this.socket.on('reconnect_error', (error) => {
+      console.error('Signaling server reconnection error:', error.message);
+    });
+
+    this.socket.on('reconnect_failed', () => {
+      console.error('Failed to reconnect to signaling server after maximum attempts');
     });
 
     this.socket.on('message', this.handleMessage);
@@ -103,16 +136,23 @@ class SignalingService extends EventEmitter {
     if (this.socket?.connected) {
       this.socket.emit('message', JSON.stringify(message));
     } else {
-      console.error('Socket is not connected');
+      console.error('Socket is not connected - cannot send message');
+      console.error('Current socket state:', this.socket?.connected ? 'connected' : 'disconnected');
     }
   }
 
   disconnect() {
     if (this.socket) {
+      console.log('Disconnecting from signaling server');
       this.socket.disconnect();
       this.socket = null;
     }
     this.userId = null;
+  }
+
+  // Helper method to check connection status
+  isConnected(): boolean {
+    return this.socket?.connected || false;
   }
 }
 

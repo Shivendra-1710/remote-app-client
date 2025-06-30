@@ -46,7 +46,7 @@ export const NewScreenShareDialog: React.FC<NewScreenShareDialogProps> = ({
 
   const handleStopSharing = () => {
     console.log('⏹️ Stopping screen share...');
-    onStartSharing(); // This should trigger the stop action since isSharing is true
+    onStartSharing(); // This will trigger stop since isSharing is true
   };
 
   const handleViewShare = () => {
@@ -54,9 +54,13 @@ export const NewScreenShareDialog: React.FC<NewScreenShareDialogProps> = ({
     onViewShare();
   };
 
+  // Check if there's a pending share request (dialog is open but not yet sharing)
+  const hasPendingShareRequest = !isRemoteSharing && !remoteStream;
+  const hasActiveRemoteShare = isRemoteSharing && remoteStream;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-zinc-900 rounded-xl shadow-2xl w-full max-w-4xl mx-4 overflow-hidden">
+      <div className="bg-zinc-900 rounded-xl shadow-2xl w-full max-w-6xl mx-4 overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-zinc-800">
           <div className="flex items-center space-x-3">
@@ -67,7 +71,11 @@ export const NewScreenShareDialog: React.FC<NewScreenShareDialogProps> = ({
             />
             <div>
               <h3 className="text-zinc-200 font-medium">{user.name}</h3>
-              <p className="text-sm text-zinc-400">Screen Sharing Options</p>
+              <p className="text-sm text-zinc-400">
+                {hasActiveRemoteShare ? 'Sharing Screen' : 
+                 hasPendingShareRequest ? 'Wants to Share Screen' : 
+                 'Screen Sharing Options'}
+              </p>
             </div>
           </div>
           <button
@@ -82,7 +90,10 @@ export const NewScreenShareDialog: React.FC<NewScreenShareDialogProps> = ({
         <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Share Your Screen Section */}
           <div className="space-y-4">
-            <h4 className="text-lg font-medium text-zinc-200">Share Your Screen</h4>
+            <h4 className="text-lg font-medium text-zinc-200 flex items-center">
+              <i className="fas fa-desktop mr-2 text-purple-400" />
+              Your Screen
+            </h4>
             <div className="aspect-video bg-zinc-800 rounded-lg overflow-hidden relative">
               {isSharing && localStream ? (
                 <video
@@ -94,18 +105,19 @@ export const NewScreenShareDialog: React.FC<NewScreenShareDialogProps> = ({
                 />
               ) : (
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-500 space-y-4">
-                  <i className="fas fa-desktop text-4xl" />
-                  <p className="text-sm">Click below to start sharing</p>
+                  <i className="fas fa-desktop text-4xl text-zinc-600" />
+                  <p className="text-sm text-center">
+                    {isSharing ? 'Setting up your screen share...' : 'Click below to share your screen'}
+                  </p>
                 </div>
               )}
             </div>
             <button
               onClick={isSharing ? handleStopSharing : handleStartSharing}
-              disabled={false} // Remove the disabled state to allow stopping
-              className={`w-full py-2 px-4 rounded-lg font-medium transition-colors ${
+              className={`w-full py-3 px-4 rounded-lg font-medium transition-all duration-200 ${
                 isSharing
-                  ? 'bg-red-500 hover:bg-red-600 text-white'
-                  : 'bg-purple-500 hover:bg-purple-600 text-white'
+                  ? 'bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/25'
+                  : 'bg-purple-500 hover:bg-purple-600 text-white shadow-lg shadow-purple-500/25'
               }`}
             >
               {isSharing ? (
@@ -116,7 +128,7 @@ export const NewScreenShareDialog: React.FC<NewScreenShareDialogProps> = ({
               ) : (
                 <>
                   <i className="fas fa-desktop mr-2" />
-                  Share Screen
+                  Share Your Screen
                 </>
               )}
             </button>
@@ -124,9 +136,12 @@ export const NewScreenShareDialog: React.FC<NewScreenShareDialogProps> = ({
 
           {/* View Remote Screen Section */}
           <div className="space-y-4">
-            <h4 className="text-lg font-medium text-zinc-200">View Remote Screen</h4>
+            <h4 className="text-lg font-medium text-zinc-200 flex items-center">
+              <i className="fas fa-eye mr-2 text-blue-400" />
+              {user.name}'s Screen
+            </h4>
             <div className="aspect-video bg-zinc-800 rounded-lg overflow-hidden relative">
-              {isRemoteSharing && remoteStream ? (
+              {hasActiveRemoteShare ? (
                 <video
                   ref={remoteVideoRef}
                   autoPlay
@@ -135,34 +150,65 @@ export const NewScreenShareDialog: React.FC<NewScreenShareDialogProps> = ({
                 />
               ) : (
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-500 space-y-4">
-                  <i className="fas fa-desktop text-4xl" />
-                  <p className="text-sm">No remote screen is being shared</p>
+                  <i className={`fas fa-desktop text-4xl ${hasPendingShareRequest ? 'text-green-400 animate-pulse' : 'text-zinc-600'}`} />
+                  {hasPendingShareRequest ? (
+                    <div className="text-center">
+                      <p className="text-sm font-medium text-green-400 mb-1">
+                        Incoming Screen Share Request
+                      </p>
+                      <p className="text-xs text-zinc-400">
+                        <span className="text-blue-400 font-medium">{user.name}</span> wants to share their screen with you
+                      </p>
+                    </div>
+                  ) : hasActiveRemoteShare ? (
+                    <p className="text-sm">Setting up remote screen...</p>
+                  ) : (
+                    <p className="text-sm text-center">
+                      No screen is being shared by {user.name}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
             <button
               onClick={handleViewShare}
-              disabled={!isRemoteSharing}
-              className={`w-full py-2 px-4 rounded-lg font-medium transition-colors ${
-                isRemoteSharing
-                  ? 'bg-blue-500 hover:bg-blue-600 text-white'
-                  : 'bg-zinc-600 text-zinc-400 cursor-not-allowed'
+              disabled={!hasPendingShareRequest && !hasActiveRemoteShare}
+              className={`w-full py-3 px-4 rounded-lg font-medium transition-all duration-200 ${
+                hasPendingShareRequest
+                  ? 'bg-green-500 hover:bg-green-600 text-white animate-pulse shadow-lg shadow-green-500/25'
+                  : hasActiveRemoteShare
+                  ? 'bg-blue-500 hover:bg-blue-600 text-white shadow-lg shadow-blue-500/25'
+                  : 'bg-zinc-700 text-zinc-400 cursor-not-allowed'
               }`}
             >
-              <i className="fas fa-eye mr-2" />
-              View Shared Screen
+              <i className={`fas ${hasPendingShareRequest ? 'fa-check' : hasActiveRemoteShare ? 'fa-expand' : 'fa-eye'} mr-2`} />
+              {hasPendingShareRequest ? 'Accept Screen Share' : 
+               hasActiveRemoteShare ? 'Viewing Screen' : 
+               'No Screen Available'}
             </button>
           </div>
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-zinc-800 flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
-          >
-            Close
-          </button>
+        <div className="p-4 border-t border-zinc-800 bg-zinc-800/30">
+          <div className="flex justify-between items-center">
+            <div className="text-xs text-zinc-400">
+              {isSharing && hasActiveRemoteShare ? 
+                '🔄 Both screens are being shared' :
+                isSharing ? 
+                '📤 You are sharing your screen' :
+                hasActiveRemoteShare ?
+                '📥 Viewing shared screen' :
+                '💬 Screen sharing with ' + user.name
+              }
+            </div>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-zinc-300 transition-colors"
+            >
+              Close
+            </button>
+          </div>
         </div>
       </div>
     </div>

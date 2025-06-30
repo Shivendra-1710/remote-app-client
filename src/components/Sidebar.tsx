@@ -79,10 +79,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
     localStream, 
     remoteStream,
     isRemoteSharing,
+    sharingWithUserId,
+    viewingFromUserId,
     acceptRemoteShare,
     rejectRemoteShare 
   } = useScreenShare({
-    userId: selectedUser?.id || '',
+    userId: currentUser.id,
     onError: (error) => console.error('Screen share error:', error),
     onRemoteShareStarted: (userId) => {
       const user = users.find(u => u.id === userId);
@@ -108,23 +110,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const offlineUsers = filteredUsers.filter(user => user.status === 'offline');
 
   const handleScreenShareClick = async (user: User) => {
+    console.log('🎬 [Sidebar] Screen share clicked for user:', { 
+      id: user.id, 
+      name: user.name, 
+      status: user.status 
+    });
     setSelectedUser(user);
     setShowScreenShareDialog(true);
   };
 
   const handleStartSharing = async () => {
     try {
-      console.log('🎬 Starting screen share for user:', selectedUser?.name);
+      console.log('🎬 [Sidebar] Starting screen share for user:', {
+        id: selectedUser?.id,
+        name: selectedUser?.name,
+        status: selectedUser?.status
+      });
       if (!selectedUser) {
         throw new Error('No user selected for screen sharing');
       }
       if (isSharing) {
         await stopSharing();
       } else {
-        await startSharing();
+        console.log('📤 [Sidebar] Calling startSharing with targetUserId:', selectedUser.id);
+        await startSharing(selectedUser.id);
       }
     } catch (error) {
-      console.error('❌ Screen share error:', error);
+      console.error('❌ [Sidebar] Screen share error:', error);
       onError?.(error instanceof Error ? error.message : 'Failed to start screen sharing');
     }
   };
@@ -236,6 +248,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       onScreenShare={handleScreenShareClick}
                       isSharing={isSharing}
                       isRemoteSharing={isRemoteSharing}
+                      sharingWithUserId={sharingWithUserId}
+                      viewingFromUserId={viewingFromUserId}
                       onStopScreenShare={handleCloseScreenShare}
                     />
                   ))}
@@ -270,6 +284,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       onScreenShare={handleScreenShareClick}
                       isSharing={isSharing}
                       isRemoteSharing={isRemoteSharing}
+                      sharingWithUserId={sharingWithUserId}
+                      viewingFromUserId={viewingFromUserId}
                       onStopScreenShare={handleCloseScreenShare}
                     />
                   ))}
@@ -308,6 +324,8 @@ interface UserListItemProps {
   onScreenShare: (user: User) => void;
   isSharing: boolean;
   isRemoteSharing: boolean;
+  sharingWithUserId: string | null;
+  viewingFromUserId: string | null;
   onStopScreenShare: () => void;
 }
 
@@ -320,10 +338,17 @@ const UserListItem = ({
   onScreenShare,
   isSharing,
   isRemoteSharing,
+  sharingWithUserId,
+  viewingFromUserId,
   onStopScreenShare
 }: UserListItemProps) => {
   const socketManager = SocketManager.getInstance();
   const [isSocketConnected, setIsSocketConnected] = useState(false);
+  
+  // Only show sharing status if this user is the one we're sharing with
+  const isCurrentlySharing = isSharing && sharingWithUserId === user.id;
+  // Only show viewing status if this user is the one we're viewing from
+  const isCurrentlyViewing = isRemoteSharing && viewingFromUserId === user.id;
   
   useEffect(() => {
     const socket = socketManager.connect(user.id);
@@ -404,9 +429,30 @@ const UserListItem = ({
                   Admin
                 </span>
               )}
+              {/* Screen Share Status Indicator */}
+              {isCurrentlySharing && (
+                <span className="flex-shrink-0 px-2 py-0.5 text-[10px] font-medium bg-purple-500/20 
+                             text-purple-400 rounded-full flex items-center space-x-1">
+                  <i className="fas fa-desktop text-[8px]" />
+                  <span>Sharing</span>
+                </span>
+              )}
+              {isCurrentlyViewing && (
+                <span className="flex-shrink-0 px-2 py-0.5 text-[10px] font-medium bg-green-500/20 
+                             text-green-400 rounded-full flex items-center space-x-1">
+                  <i className="fas fa-eye text-[8px]" />
+                  <span>Viewing</span>
+                </span>
+              )}
             </div>
             <p className="text-sm text-zinc-400 truncate flex items-center space-x-1">
               <span>{statusLabels[user.status]}</span>
+              {isCurrentlySharing && (
+                <span className="text-purple-400">• Screen sharing active</span>
+              )}
+              {isCurrentlyViewing && (
+                <span className="text-green-400">• Viewing their screen</span>
+              )}
             </p>
           </div>
         </div>
@@ -419,33 +465,46 @@ const UserListItem = ({
               whileTap={{ scale: 0.9 }}
               onClick={handleScreenShareClick}
               disabled={!isSocketConnected}
-              className={`p-2 rounded-lg ${
+              className={`p-2 rounded-lg relative ${
                 !isSocketConnected
                   ? 'bg-zinc-700 text-zinc-500 cursor-not-allowed'
-                  : isSharing
-                  ? 'bg-purple-500/30 text-purple-400'
-                  : isRemoteSharing
-                  ? 'bg-green-500/30 text-green-400'
+                  : isCurrentlySharing
+                  ? 'bg-purple-500/30 text-purple-400 shadow-lg shadow-purple-500/20'
+                  : isCurrentlyViewing
+                  ? 'bg-green-500/30 text-green-400 shadow-lg shadow-green-500/20'
                   : 'bg-zinc-800 hover:bg-purple-500/30 text-zinc-400 hover:text-purple-400'
-              } transition-colors duration-200`}
+              } transition-all duration-200`}
               title={
                 !isSocketConnected 
-                  ? 'Connecting...' 
-                  : isSharing 
-                  ? 'Screen Sharing Active' 
-                  : isRemoteSharing
-                  ? 'View Screen Share'
-                  : 'Share Screen'
+                  ? 'Connecting to server...' 
+                  : isCurrentlySharing 
+                  ? `Stop sharing your screen with ${user.name}` 
+                  : isCurrentlyViewing
+                  ? `Currently viewing ${user.name}'s screen - click to manage`
+                  : `Share your screen with ${user.name}`
               }
             >
               <i className={`fas ${
-                isSharing 
+                isCurrentlySharing 
                   ? 'fa-desktop' 
-                  : isRemoteSharing
+                  : isCurrentlyViewing
                   ? 'fa-eye'
                   : 'fa-desktop'
               } text-sm`} />
+              
+              {/* Active indicator */}
+              {(isCurrentlySharing || isCurrentlyViewing) && (
+                <span className={`absolute -top-1 -right-1 w-3 h-3 rounded-full ${
+                  isCurrentlySharing ? 'bg-purple-500' : 'bg-green-500'
+                } animate-pulse`} />
+              )}
+              
+              {/* Connecting indicator */}
+              {!isSocketConnected && (
+                <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-yellow-500 animate-ping" />
+              )}
             </motion.button>
+            
             <motion.button
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
@@ -456,7 +515,7 @@ const UserListItem = ({
               }}
               className="p-2 rounded-lg bg-zinc-800 hover:bg-purple-500/30 text-zinc-400 
                      hover:text-purple-400 transition-colors duration-200"
-              title="Remote Control"
+              title={`Take remote control of ${user.name}'s computer`}
             >
               <i className="fas fa-mouse-pointer text-sm" />
             </motion.button>

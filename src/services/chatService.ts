@@ -6,7 +6,7 @@ class ChatService {
   private userId: string | null = null;
 
   constructor() {
-    this.socket = io('https://remote-app-server.onrender.com', {
+    this.socket = io('http://localhost:3000', {
       autoConnect: false,
       withCredentials: true
     });
