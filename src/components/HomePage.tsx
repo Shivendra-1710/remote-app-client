@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Menu } from '@headlessui/react';
 import { Sidebar } from './Sidebar';
 import { Chat } from './Chat';
 import { RemoteControl } from './RemoteControl';
+import { RemoteAccessViewer } from './RemoteAccessViewer';
 import { ScreenShare } from './ScreenShare';
 import { UserProfile } from './UserProfile';
 import { AdminSettings } from './AdminSettings';
@@ -13,6 +14,7 @@ import { getUserProfile, updateUserProfile, updateUserStatus, getAllUsers } from
 import { User, UserStatus } from '../types/user';
 import { chatService } from '../services/chatService';
 import { Message } from '../types/chat';
+import { useRemoteAccess } from '../hooks/useRemoteAccess';
 import SocketManager from '../utils/socketManager';
 
 // Current User Profile Component
@@ -140,18 +142,76 @@ const CurrentUserProfile: React.FC<{
 };
 
 const HomePage: React.FC = () => {
+  // 🔥 CRITICAL: Stable state management to prevent hook re-creation
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [activeView, setActiveView] = useState<'chat' | 'remote' | 'profile'>('chat');
-  const [isControlling, setIsControlling] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<'chat' | 'remote' | 'profile'>('chat');
+  const [isControlling, setIsControlling] = useState<boolean>(false);
 
-  // Replace hardcoded current user with state
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [users, setUsers] = useState<User[]>([]);
+  // 🔥 SIMPLIFIED: Remote access state (no complex state synchronization)
+  const [showRemoteAccessViewer, setShowRemoteAccessViewer] = useState(false);
+  const [remoteAccessTarget, setRemoteAccessTarget] = useState<User | null>(null);
 
-  // Fetch current user data and all users on component mount
+  // 🔥 CRITICAL FIX: Use useCallback for ALL callbacks to prevent hook re-creation
+  const handleError = useCallback((error: string) => {
+    console.error('🚨 [HomePage] Error:', error);
+    setError(error);
+  }, []);
+
+  const handleRemoteAccessStarted = useCallback((targetUserId: string) => {
+    console.log('🎮 [HomePage] Remote access started for target:', targetUserId);
+    // Find the target user and set states
+    const targetUser = users.find(user => user.id === targetUserId);
+    if (targetUser) {
+      console.log('🎮 [HomePage] Setting remote access target:', targetUser.name);
+      setRemoteAccessTarget(targetUser);
+      setShowRemoteAccessViewer(true);
+    }
+  }, [users]);
+
+  const handleRemoteAccessStopped = useCallback(() => {
+    console.log('🛑 [HomePage] Remote access stopped');
+    setShowRemoteAccessViewer(false);
+    setRemoteAccessTarget(null);
+  }, []);
+
+  // 🔥 CRITICAL: Always call hook with stable callbacks - NO conditional calling
+  const { 
+    startRemoteAccess,
+    stopRemoteAccess,
+    isControlling: isRemoteControlling,
+    remoteStream: remoteAccessStream,
+    hasRemoteStream,
+    remoteStreamId: remoteAccessStreamId
+  } = useRemoteAccess({
+    userId: currentUser?.id || '', // Safe fallback, hook handles empty string
+    onError: handleError,
+    onRemoteAccessStarted: handleRemoteAccessStarted,
+    onRemoteAccessStopped: handleRemoteAccessStopped,
+  });
+
+  // 🔥 DEBUG: Track hook state synchronization
+  useEffect(() => {
+    console.log('[HomePage] 🔍 Hook state update:', {
+      isRemoteControlling,
+      hasRemoteStream,
+      remoteAccessStreamId,
+      showRemoteAccessViewer,
+      remoteAccessTarget: remoteAccessTarget?.name
+    });
+    
+    // Auto-show viewer when remote stream is available
+    if (isRemoteControlling && hasRemoteStream && !showRemoteAccessViewer) {
+      console.log('[HomePage] ✅ Auto-showing remote access viewer due to stream availability');
+      setShowRemoteAccessViewer(true);
+    }
+  }, [isRemoteControlling, hasRemoteStream, remoteAccessStreamId, showRemoteAccessViewer, remoteAccessTarget]);
+
+  // 🔥 STABILIZED: Fetch data effect with stable dependencies
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -162,9 +222,6 @@ const HomePage: React.FC = () => {
         ]);
         
         console.log('👤 [HomePage] Current user:', { id: userData.id, name: userData.name });
-        console.log('👥 [HomePage] All users loaded:', allUsers.map(u => ({ id: u.id, name: u.name, status: u.status })));
-        console.log('📊 [HomePage] Total users: ', allUsers.length);
-        
         setCurrentUser(userData);
         setUsers(allUsers);
 
@@ -186,19 +243,13 @@ const HomePage: React.FC = () => {
       const socketManager = SocketManager.getInstance();
       socketManager.disconnect();
     };
-  }, []);
+  }, []); // 🔥 STABLE: Empty dependencies
 
-  // Load chat history when a user is selected
+  // 🔥 STABILIZED: Chat history effect
   useEffect(() => {
     if (selectedUser && currentUser) {
-      console.log('Loading chat history for users:', {
-        currentUser: currentUser.id,
-        selectedUser: selectedUser.id
-      });
-
       chatService.getChatHistory(selectedUser.id)
         .then((history: Message[]) => {
-          console.log('Received chat history:', history);
           setMessages(history);
         })
         .catch((err: Error) => {
@@ -207,16 +258,13 @@ const HomePage: React.FC = () => {
 
       // Set up real-time message listeners
       chatService.onNewMessage((message: Message) => {
-        console.log('Received new message:', message);
-        setMessages(prev => {
-          console.log('Previous messages:', prev);
-          return [...prev, message];
-        });
+        setMessages(prev => [...prev, message]);
       });
     }
-  }, [selectedUser, currentUser]);
+  }, [selectedUser?.id, currentUser?.id]); // 🔥 STABLE: Only depend on IDs
 
-  const handleStatusChange = async (status: UserStatus) => {
+  // 🔥 STABILIZED: All callback handlers with useCallback
+  const handleStatusChange = useCallback(async (status: UserStatus) => {
     if (!currentUser) return;
     
     try {
@@ -225,9 +273,9 @@ const HomePage: React.FC = () => {
     } catch (err) {
       console.error('Failed to update status:', err);
     }
-  };
+  }, [currentUser?.id]); // Only depend on currentUser.id
 
-  const handleProfileUpdate = async (updatedProfile: Partial<User>) => {
+  const handleProfileUpdate = useCallback(async (updatedProfile: Partial<User>) => {
     if (!currentUser) return;
 
     try {
@@ -236,40 +284,44 @@ const HomePage: React.FC = () => {
     } catch (err) {
       console.error('Failed to update profile:', err);
     }
-  };
+  }, [currentUser?.id]);
 
-  const handleSendMessage = async (content: string) => {
+  const handleSendMessage = useCallback(async (content: string) => {
     if (!selectedUser || !content.trim() || !currentUser) return;
 
     try {
-      console.log('Sending message:', {
-        content,
-        to: selectedUser.id,
-        from: currentUser.id
-      });
-
-      // Send the message through the socket
       const savedMessage = await chatService.sendMessage(selectedUser.id, content);
-      console.log('Message saved successfully:', savedMessage);
-
-      // Update messages with the saved message
       setMessages(prev => [...prev, savedMessage]);
     } catch (error) {
       console.error('Failed to send message:', error);
     }
-  };
+  }, [selectedUser?.id, currentUser?.id]);
 
-  const handleAddUser = () => {
-    // Implement user addition logic
+  const handleAddUser = useCallback(() => {
     console.log('Add user clicked');
-  };
+  }, []);
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     logout();
     window.location.reload();
-  };
+  }, []);
 
-  // Add loading and error states to the render
+  const handleRemoteAccessStart = useCallback((targetUser: User) => {
+    console.log('🎮 [HomePage] Remote access started from sidebar for:', targetUser.name);
+    setRemoteAccessTarget(targetUser);
+    setShowRemoteAccessViewer(true);
+  }, []);
+
+  const handleRemoteAccessClose = useCallback(() => {
+    console.log('🛑 [HomePage] Closing remote access viewer');
+    setShowRemoteAccessViewer(false);
+    setRemoteAccessTarget(null);
+    if (isRemoteControlling) {
+      stopRemoteAccess();
+    }
+  }, [isRemoteControlling, stopRemoteAccess]);
+
+  // Early returns with stable JSX
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-discord-dark">
@@ -287,7 +339,9 @@ const HomePage: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-discord-dark text-white overflow-hidden">
+    <div 
+      className="flex flex-col h-screen bg-discord-dark text-white overflow-hidden"
+    >
       {/* Full-width header with centered logo */}
       <div className="w-full h-14 bg-discord-dark-secondary border-b border-discord-divider flex items-center justify-center">
         <Logo size="md" showText={true} />
@@ -307,6 +361,7 @@ const HomePage: React.FC = () => {
               onStatusChange={handleStatusChange}
               onLogout={handleLogout}
               selectedUserId={selectedUser?.id || null}
+              onRemoteAccessStart={handleRemoteAccessStart}
             />
           </div>
 
@@ -364,6 +419,17 @@ const HomePage: React.FC = () => {
           )}
         </div>
       </div>
+      
+      {/* Remote Access Viewer Overlay */}
+      {(showRemoteAccessViewer || (isRemoteControlling && hasRemoteStream)) && remoteAccessTarget && (
+        <RemoteAccessViewer
+          targetUser={remoteAccessTarget}
+          remoteStream={remoteAccessStream}
+          isConnected={isRemoteControlling}
+          onClose={handleRemoteAccessClose}
+          onError={(error) => setError(error)}
+        />
+      )}
     </div>
   );
 };

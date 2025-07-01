@@ -33,6 +33,12 @@ class SignalingSocketManager {
       this.disconnect();
     }
 
+    // CRITICAL: If already connected to same user, force disconnect and reconnect to prevent multiple sockets
+    if (this.socket && this.currentUserId === userId && this.socket.connected) {
+      console.log('[SignalingSocketManager] ⚠️  Forcing disconnect to prevent multiple sockets for same user:', userId);
+      this.disconnect();
+    }
+
     // If already connecting, wait
     if (this.isConnecting) {
       console.log('[SignalingSocketManager] ⏳ Already connecting, please wait...');
@@ -64,7 +70,13 @@ class SignalingSocketManager {
         to: '',
         data: null
       }));
-      console.log('[SignalingSocketManager] 📝 User registered:', userId);
+      console.log('[SignalingSocketManager] 📝 Registration message sent for user:', userId);
+    });
+
+    this.socket.on('registration-confirmed', (data) => {
+      console.log('[SignalingSocketManager] ✅ Registration confirmed:', data);
+      console.log('[SignalingSocketManager] 👤 User ID:', data.userId);
+      console.log('[SignalingSocketManager] 🔌 Socket ID:', data.socketId);
     });
 
     this.socket.on('connect_error', (error) => {
@@ -87,6 +99,7 @@ class SignalingSocketManager {
         to: '',
         data: null
       }));
+      console.log('[SignalingSocketManager] 🔄 Re-registration message sent for user:', userId);
     });
 
     // Set up universal event forwarding
@@ -99,7 +112,13 @@ class SignalingSocketManager {
     if (!this.socket) return;
 
     // Forward all relevant events to registered handlers
-    const events = ['share-request', 'offer', 'answer', 'ice-candidate', 'share-stopped', 'peer-disconnected', 'user-joined'];
+    const events = [
+      'share-request', 'offer', 'answer', 'ice-candidate', 'share-stopped', 'peer-disconnected', 'user-joined',
+      'remote-access-request', 'remote-access-offer', 'remote-access-answer', 'remote-access-ice-candidate', 'remote-access-stopped', 'remote-access-debug',
+      'registration-confirmed'
+    ];
+    
+    console.log('[SignalingSocketManager] 🎯 Setting up event forwarding for:', events);
     
     events.forEach(eventName => {
       this.socket!.on(eventName, (data: any) => {
@@ -108,6 +127,7 @@ class SignalingSocketManager {
         // Forward to all registered handlers for this event
         const handlers = this.eventHandlers.get(eventName);
         if (handlers) {
+          console.log(`[SignalingSocketManager] ✅ Forwarding ${eventName} to ${handlers.size} handlers`);
           handlers.forEach(handler => {
             try {
               handler(data);
@@ -115,6 +135,8 @@ class SignalingSocketManager {
               console.error(`[SignalingSocketManager] Error in ${eventName} handler:`, error);
             }
           });
+        } else {
+          console.warn(`[SignalingSocketManager] ⚠️ No handlers registered for ${eventName}`);
         }
       });
     });
@@ -123,6 +145,28 @@ class SignalingSocketManager {
     this.socket.onAny((eventName, ...args) => {
       if (!['connect', 'disconnect', 'ping', 'pong'].includes(eventName)) {
         console.log('[SignalingSocketManager] 📡 Any event:', eventName, args);
+        
+        // Special debugging for remote access events
+        if (eventName.startsWith('remote-access')) {
+          console.log('[SignalingSocketManager] 🔍 Remote access event details:');
+          console.log('[SignalingSocketManager] 🔍 Event name:', eventName);
+          console.log('[SignalingSocketManager] 🔍 Event data:', args[0]);
+          console.log('[SignalingSocketManager] 🔍 Registered handlers for this event:', this.eventHandlers.get(eventName)?.size || 0);
+          
+          // Extra debugging for remote-access-offer specifically
+          if (eventName === 'remote-access-offer') {
+            console.log('[SignalingSocketManager] 🎯 CRITICAL: REMOTE-ACCESS-OFFER RECEIVED!');
+            console.log('[SignalingSocketManager] 🎯 Current user ID from socket manager:', this.currentUserId);
+            console.log('[SignalingSocketManager] 🎯 Target user ID in offer:', args[0]?.targetUserId);
+            console.log('[SignalingSocketManager] 🎯 Room ID in offer:', args[0]?.roomId);
+            console.log('[SignalingSocketManager] 🎯 Has offer data:', !!args[0]?.offer);
+            console.log('[SignalingSocketManager] 🎯 Handlers registered:', this.eventHandlers.get(eventName)?.size || 0);
+            
+            if (this.eventHandlers.get(eventName)?.size === 0) {
+              console.error('[SignalingSocketManager] ❌ NO HANDLERS REGISTERED FOR REMOTE-ACCESS-OFFER!');
+            }
+          }
+        }
       }
     });
   }

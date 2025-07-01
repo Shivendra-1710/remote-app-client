@@ -6,6 +6,7 @@ import { Button } from './shared/Button';
 import { Card } from './shared/Card';
 import { User, UserStatus } from '../types/user';
 import { useScreenShare } from '../hooks/useScreenShare';
+import { useRemoteAccess } from '../hooks/useRemoteAccess';
 import SocketManager from '../utils/socketManager';
 import { NewScreenShareDialog } from './NewScreenShareDialog';
 
@@ -18,6 +19,7 @@ interface SidebarProps {
   className?: string;
   selectedUserId: string | null;
   onError?: (error: string) => void;
+  onRemoteAccessStart?: (targetUser: User) => void;
 }
 
 const statusLabels = {
@@ -62,6 +64,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   className,
   selectedUserId,
   onError,
+  onRemoteAccessStart,
 }) => {
   
   const [searchTerm, setSearchTerm] = useState('');
@@ -96,6 +99,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
     onRemoteShareStopped: () => {
       setShowScreenShareDialog(false);
       setSelectedUser(null);
+    }
+  });
+
+  const {
+    isControlling: isRemoteControlling,
+    startRemoteAccess,
+    stopRemoteAccess,
+    remoteStream: remoteAccessStream,
+    error: remoteAccessError
+  } = useRemoteAccess({
+    userId: currentUser.id,
+    onError: (error) => console.error('Remote access error:', error),
+    onRemoteAccessStarted: (targetUserId) => {
+      const user = users.find(u => u.id === targetUserId);
+      if (user) {
+        console.log('🎮 Remote access started for:', user.name);
+        onRemoteAccessStart?.(user);
+      }
+    },
+    onRemoteAccessStopped: () => {
+      console.log('🛑 Remote access stopped');
     }
   });
 
@@ -157,6 +181,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
     setShowScreenShareDialog(false);
     setSelectedUser(null);
+  };
+
+  const handleRemoteAccessClick = async (user: User) => {
+    try {
+      console.log('🎮 [Sidebar] Starting remote access for user:', {
+        id: user.id,
+        name: user.name,
+        status: user.status
+      });
+      
+      if (isRemoteControlling) {
+        await stopRemoteAccess();
+      } else {
+        await startRemoteAccess(user.id);
+      }
+    } catch (error) {
+      console.error('❌ [Sidebar] Remote access error:', error);
+      onError?.(error instanceof Error ? error.message : 'Failed to start remote access');
+    }
   };
 
   const getStatusIcon = (status: string) => {
@@ -246,8 +289,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       setActiveView={setActiveView}
                       setIsControlling={setIsControlling}
                       onScreenShare={handleScreenShareClick}
+                      onRemoteAccess={handleRemoteAccessClick}
                       isSharing={isSharing}
                       isRemoteSharing={isRemoteSharing}
+                      isRemoteControlling={isRemoteControlling}
                       sharingWithUserId={sharingWithUserId}
                       viewingFromUserId={viewingFromUserId}
                       onStopScreenShare={handleCloseScreenShare}
@@ -282,8 +327,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       setActiveView={setActiveView}
                       setIsControlling={setIsControlling}
                       onScreenShare={handleScreenShareClick}
+                      onRemoteAccess={handleRemoteAccessClick}
                       isSharing={isSharing}
                       isRemoteSharing={isRemoteSharing}
+                      isRemoteControlling={isRemoteControlling}
                       sharingWithUserId={sharingWithUserId}
                       viewingFromUserId={viewingFromUserId}
                       onStopScreenShare={handleCloseScreenShare}
@@ -322,8 +369,10 @@ interface UserListItemProps {
   setActiveView: (view: string) => void;
   setIsControlling: (isControlling: boolean) => void;
   onScreenShare: (user: User) => void;
+  onRemoteAccess: (user: User) => void;
   isSharing: boolean;
   isRemoteSharing: boolean;
+  isRemoteControlling: boolean;
   sharingWithUserId: string | null;
   viewingFromUserId: string | null;
   onStopScreenShare: () => void;
@@ -336,8 +385,10 @@ const UserListItem = ({
   setActiveView,
   setIsControlling,
   onScreenShare,
+  onRemoteAccess,
   isSharing,
   isRemoteSharing,
+  isRemoteControlling,
   sharingWithUserId,
   viewingFromUserId,
   onStopScreenShare
@@ -386,20 +437,38 @@ const UserListItem = ({
     }
   };
 
+  const handleRemoteAccessClick = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!isSocketConnected) {
+      console.error('[UserListItem] Cannot start remote access: Socket not connected');
+      return;
+    }
+
+    onRemoteAccess(user);
+  };
+
   return (
     <motion.div
       whileHover={{ x: 4 }}
       whileTap={{ scale: 0.98 }}
       className="relative group"
     >
-      <button
+      <div
         onClick={onClick}
-        className={`w-full p-2 flex items-center rounded-lg relative overflow-hidden
+        className={`w-full p-2 flex items-center rounded-lg relative overflow-hidden cursor-pointer
                  transition-all duration-200 ${
                    isSelected
                      ? 'bg-purple-500/20 hover:bg-purple-500/30'
                      : 'hover:bg-zinc-800/80'
                  }`}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onClick();
+          }
+        }}
       >
         {/* User Info */}
         <div className="flex items-center space-x-3 flex-1 min-w-0">
@@ -508,20 +577,42 @@ const UserListItem = ({
             <motion.button
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
-              onClick={(e) => {
-                e.stopPropagation();
-                setActiveView('remote');
-                setIsControlling(true);
-              }}
-              className="p-2 rounded-lg bg-zinc-800 hover:bg-purple-500/30 text-zinc-400 
-                     hover:text-purple-400 transition-colors duration-200"
-              title={`Take remote control of ${user.name}'s computer`}
+              onClick={handleRemoteAccessClick}
+              disabled={!isSocketConnected}
+              className={`p-2 rounded-lg relative ${
+                !isSocketConnected
+                  ? 'bg-zinc-700 text-zinc-500 cursor-not-allowed'
+                  : isRemoteControlling
+                  ? 'bg-orange-500/30 text-orange-400 shadow-lg shadow-orange-500/20'
+                  : 'bg-zinc-800 hover:bg-orange-500/30 text-zinc-400 hover:text-orange-400'
+              } transition-all duration-200`}
+              title={
+                !isSocketConnected 
+                  ? 'Connecting to server...' 
+                  : isRemoteControlling 
+                  ? `Stop controlling ${user.name}'s computer` 
+                  : `Take remote control of ${user.name}'s computer`
+              }
             >
-              <i className="fas fa-mouse-pointer text-sm" />
+              <i className={`fas ${
+                isRemoteControlling 
+                  ? 'fa-desktop' 
+                  : 'fa-mouse-pointer'
+              } text-sm`} />
+              
+              {/* Active indicator */}
+              {isRemoteControlling && (
+                <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-orange-500 animate-pulse" />
+              )}
+              
+              {/* Connecting indicator */}
+              {!isSocketConnected && (
+                <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-yellow-500 animate-ping" />
+              )}
             </motion.button>
           </div>
         )}
-      </button>
+      </div>
     </motion.div>
   );
 };

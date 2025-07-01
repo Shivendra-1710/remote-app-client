@@ -41,6 +41,7 @@
     "@electron/remote": "^2.1.2",
     "@headlessui/react": "^2.2.4",
     "@heroicons/react": "^2.0.0",
+    "@hurdlegroup/robotjs": "^0.12.3",
     "@types/simple-peer": "^9.11.8",
     "@types/socket.io-client": "^1.4.36",
     "@types/uuid": "^10.0.0",

@@ -1,10 +1,94 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain, desktopCapturer, screen } = require('electron');
 const path = require('path');
 const isDev = process.env.NODE_ENV !== 'production';
 const { initialize, enable } = require('@electron/remote/main');
 
 // Initialize remote module
 initialize();
+
+// Handle desktop capturer requests from renderer
+ipcMain.handle('get-desktop-sources', async (event, options) => {
+  try {
+    console.log('🖥️ [Main] Getting desktop sources for remote access...');
+    const sources = await desktopCapturer.getSources(options);
+    console.log('✅ [Main] Found', sources.length, 'desktop sources');
+    return sources;
+  } catch (error) {
+    console.error('❌ [Main] Error getting desktop sources:', error);
+    throw error;
+  }
+});
+
+// Mouse simulation handlers removed - using robotjs versions below
+
+ipcMain.handle('remote-control:screen-size', async () => {
+  try {
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const result = {
+      width: primaryDisplay.bounds.width,
+      height: primaryDisplay.bounds.height,
+      scaleFactor: primaryDisplay.scaleFactor
+    };
+    console.log('📏 [Main] Screen size:', result);
+    return result;
+  } catch (error) {
+    console.error('❌ [Main] Error getting screen size:', error);
+    return { width: 1920, height: 1080, scaleFactor: 1 };
+  }
+});
+
+// Mouse control handlers
+ipcMain.handle('remote-control:mouse-move', async (event, x, y) => {
+  try {
+    const robotjs = require('@hurdlegroup/robotjs');
+    console.log(`🖱️ [Main] Moving mouse to: ${x}, ${y}`);
+    robotjs.moveMouse(x, y);
+    return { success: true };
+  } catch (error) {
+    console.error('❌ [Main] Error moving mouse:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('remote-control:mouse-click', async (event, x, y, isDown, button = 'left') => {
+  try {
+    const robotjs = require('@hurdlegroup/robotjs');
+    console.log(`🖱️ [Main] Mouse ${isDown ? 'down' : 'up'} at: ${x}, ${y}, button: ${button}`);
+    
+    // Move to position first
+    robotjs.moveMouse(x, y);
+    
+    // Perform click action
+    if (isDown) {
+      robotjs.mouseToggle('down', button);
+    } else {
+      robotjs.mouseToggle('up', button);
+    }
+    
+    return { success: true };
+  } catch (error) {
+    console.error('❌ [Main] Error clicking mouse:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('remote-control:key-event', async (event, key, isDown) => {
+  try {
+    const robotjs = require('@hurdlegroup/robotjs');
+    console.log(`⌨️ [Main] Key ${isDown ? 'down' : 'up'}: ${key}`);
+    
+    if (isDown) {
+      robotjs.keyToggle(key, 'down');
+    } else {
+      robotjs.keyToggle(key, 'up');
+    }
+    
+    return { success: true };
+  } catch (error) {
+    console.error('❌ [Main] Error with key event:', error);
+    return { success: false, error: error.message };
+  }
+});
 
 // Enable WebRTC features
 app.commandLine.appendSwitch('enable-features', 'WebRTCPipeWireCapturer');
