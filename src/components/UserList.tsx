@@ -39,7 +39,7 @@ export const UserList: React.FC<UserListProps> = ({
         setLoading(true);
         setError(null);
         const token = localStorage.getItem('token');
-        const response = await axios.get('http://localhost:3000/api/users/online', {
+        const response = await axios.get('https://remote-app-server.onrender.com/api/users/online', {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (response.data.success) {

@@ -29,9 +29,9 @@ class SignalingService extends EventEmitter {
   connect(userId: string) {
     this.userId = userId;
     
-    console.log('Attempting to connect to signaling server at http://localhost:3001');
+    console.log('Attempting to connect to signaling server at https://signaling-new-4.onrender.com');
     
-    this.socket = io('http://localhost:3001', {
+    this.socket = io('https://signaling-new-4.onrender.com', {
       transports: ['websocket', 'polling'],
       timeout: 20000,
       forceNew: true,

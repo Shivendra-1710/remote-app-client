@@ -50,7 +50,7 @@ class SignalingSocketManager {
 
     console.log('[SignalingSocketManager] 🔌 Creating NEW socket connection for user:', userId);
 
-    this.socket = io('http://localhost:3001', {
+    this.socket = io('https://signaling-new-4.onrender.com', {
       transports: ['websocket', 'polling'],
       timeout: 20000,
       reconnection: true,
